@@ -31,6 +31,19 @@ main {
 	margin-right: auto;
 }
 
+#mode-buttons {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 12px;
+	margin: 20px 0;
+}
+
+#timed-buttons {
+	display: flex;
+	gap: 0;
+}
+
 #title {
 	font-size: 2.4em;
 	margin-top: 5px;
@@ -47,6 +60,26 @@ main {
 	text-align: left;
 	margin-left: auto;
 	margin-right: auto;
+}
+
+#hint-text summary {
+	cursor: pointer;
+	font-weight: bold;
+	list-style: none;
+	padding: 4px 0;
+	color: #555;
+}
+
+#hint-text summary::-webkit-details-marker {
+	display: none;
+}
+
+#hint-text summary::before {
+	content: '▸  ';
+}
+
+#hint-text[open] summary::before {
+	content: '▾  ';
 }
 
 #hint-list {
@@ -185,6 +218,44 @@ main {
 	height: 20px;
 }
 
+#solution-display {
+	font-family: 'Roboto Mono', monospace;
+	font-size: 16px;
+	background-color: #1a1a1a;
+	color: #aaa;
+	padding: 12px;
+	margin-top: 8px;
+	width: 100%;
+	box-sizing: border-box;
+	white-space: pre-wrap;
+	word-break: break-all;
+	border: 2px solid #555;
+}
+
+#show-solution-button {
+	margin-top: 8px;
+}
+
+.practice-table {
+	margin: 16px auto;
+	border-collapse: collapse;
+	font-family: KaTeX_Main, serif;
+	font-size: 1.1em;
+}
+
+.practice-table td {
+	padding: 6px 24px;
+	text-align: left;
+}
+
+.practice-table td:first-child {
+	color: #555;
+}
+
+.practice-table td:last-child {
+	text-align: right;
+}
+
 .problem-header {
 	font-size: 1.5em;
 }
@@ -260,6 +331,99 @@ label {
 
 #skipped-problems {
 	display: none;
+}
+
+/* Account widget */
+#account-widget {
+    position: fixed;
+    top: 15px;
+    right: 20px;
+    z-index: 100;
+    text-align: right;
+}
+
+.account-button-signed-in {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    font-size: 1.1em;
+    font-weight: bold;
+}
+
+#account-panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 300px;
+    background: white;
+    border: 2px solid black;
+    padding: 18px;
+    text-align: left;
+    box-shadow: 4px 4px 0 #ddd;
+}
+
+#panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #ddd;
+}
+
+#panel-name {
+    font-weight: bold;
+}
+
+#panel-best {
+    margin: 0 0 14px;
+    font-size: 0.95em;
+}
+
+.panel-section-title {
+    font-weight: bold;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #888;
+    margin: 0 0 8px;
+}
+
+.panel-empty {
+    color: #aaa;
+    font-size: 0.9em;
+    margin: 0;
+}
+
+/* Intro personal best / login hint */
+#intro-personal-best {
+    margin: 4px auto 20px;
+    padding: 10px 20px;
+    border: 1px solid #ddd;
+    display: inline-block;
+    font-size: 0.95em;
+    color: #333;
+    min-height: 1.4em;
+}
+
+.link-button {
+    background: none;
+    border: none;
+    padding: 0;
+    font-family: KaTeX_Main, serif;
+    font-size: inherit;
+    font-weight: bold;
+    cursor: pointer;
+    text-decoration: underline;
+    color: black;
+}
+
+.history-entry {
+    padding: 7px 16px;
+    border: 1px solid #ddd;
+    margin: 5px 0;
+    font-family: KaTeX_Main, serif;
+    text-align: left;
 }
 
 /* Leaderboard styles */

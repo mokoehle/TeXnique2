@@ -15,6 +15,15 @@ let mobile = false;
 let showShadow = false;
 let skippedProblems = [];
 let showSkipped = false;
+let currentUser = null;
+let currentMode = 'timed';
+let currentDuration = 180;
+let currentUserPersonalBest = 0;
+let personalBests = {};
+let currentProblem = null;
+let practiceHelpUsedCurrentProblem = false;
+let practiceHelpUsed = 0;
+let practiceSolvedAlone = 0;
 
 function mobileCheck() {
   var check = false;
@@ -74,8 +83,7 @@ function showIntro() {
     $("#intro-window").show();
     $("#score-submission").show();
 
-    let introText =  "This is a game to test your \\(\\LaTeX\\) skills. <br/> <br/>" +
-                     " Type as many formulas as you can in " + TIMEOUT_STRING + " (timed game), or play an untimed game (zen mode)!";
+    let introText = "How many formulas can you type? Choose a time limit, or practice in Zen Mode.";
     $("#intro-text").html(introText);
 
     if (mobileCheck()) {
@@ -95,12 +103,46 @@ function endGame() {
     $("#ending-window").show();
     displayLaTeXInBody();
 
-    let problemsText = numCorrect + ((numCorrect == 1) ? " problem" : " problems");
-    let endingText = "You finished " + problemsText + " for a total score of " + currentScore;
-    $("#ending-text").text(endingText);
-    
-    // Load initial leaderboard
-    loadLeaderboard('today');
+    if (currentMode === 'practice') {
+        $('#ending-title').text('Practice Complete!');
+        $('#ending-text').text('You went through all ' + problems.length + ' problems.');
+        $('#ending-personal-best').text('');
+        $('#practice-stats').html(
+            '<table class="practice-table">' +
+            '<tr><td>On your own</td><td><b>' + practiceSolvedAlone + '</b></td></tr>' +
+            '<tr><td>Used solution</td><td><b>' + practiceHelpUsed + '</b></td></tr>' +
+            '<tr><td>Skipped</td><td><b>' + skippedProblems.length + '</b></td></tr>' +
+            '</table>'
+        ).show();
+        $('#score-submission').hide();
+        $('#leaderboard-section').hide();
+    } else {
+        $('#ending-title').text('Game Over!');
+        $('#practice-stats').hide();
+        $('#score-submission').show();
+        $('#leaderboard-section').show();
+
+        let problemsText = numCorrect + ((numCorrect == 1) ? " problem" : " problems");
+        $("#ending-text").text("You finished " + problemsText + " for a total score of " + currentScore);
+
+        $('#leaderboard-title').text(currentDuration > 0 ? durationLabel(currentDuration) + ' Leaderboard' : 'Leaderboard');
+        loadLeaderboard('today');
+        saveGameResult(currentScore, numCorrect, currentMode, currentDuration);
+
+        if (currentUser && currentDuration > 0) {
+            if (currentScore >= currentUserPersonalBest) {
+                $('#ending-personal-best').text('New personal best for ' + durationLabel(currentDuration) + '!');
+                personalBests[currentDuration] = currentScore;
+                currentUserPersonalBest = currentScore;
+            } else {
+                $('#ending-personal-best').text('Your best for ' + durationLabel(currentDuration) + ': ' + currentUserPersonalBest + ' points');
+            }
+        } else if (!currentUser) {
+            $('#ending-personal-best').text('Sign in to track your progress.');
+        } else {
+            $('#ending-personal-best').text('');
+        }
+    }
     
     skippedProblems.forEach(idx => {
       let target = problems[problemsOrder[idx % problems.length]];
@@ -136,7 +178,20 @@ function endGame() {
 }
 
 
-function startGame(useTimer) {
+function durationLabel(seconds) {
+    return (seconds / 60) + ' min';
+}
+
+function startGame(durationSeconds) {
+    currentDuration = durationSeconds;
+    currentMode = durationSeconds === 0 ? 'zen' : 'timed';
+    currentUserPersonalBest = personalBests[durationSeconds] || 0;
+
+    if (durationSeconds > 0) {
+        TIMEOUT_SECONDS = durationSeconds;
+        TIMEOUT_STRING = durationLabel(durationSeconds);
+    }
+
     problemNumber = 0;
     currentScore = 0;
     numCorrect = 0;
@@ -152,24 +207,54 @@ function startGame(useTimer) {
     $("#skipped-problems").hide();
 
     displayLaTeXInBody();
-
     $("#score").text(0);
 
-    if (useTimer) {
+    if (durationSeconds > 0) {
+        $('#show-solution-button').hide();
         displayTime(TIMEOUT_SECONDS);
-
-        // Reset and start the timer
         loadProblem();
-        startTimer(function() {
-            endGame();
-        });
+        startTimer(function() { endGame(); });
     } else {
+        $('#show-solution-button').show();
         displayInfiniteTime();
         loadProblem();
     }
 }
 
+function startPracticeMode() {
+    currentMode = 'practice';
+    currentDuration = 0;
+    practiceHelpUsed = 0;
+    practiceSolvedAlone = 0;
+    practiceHelpUsedCurrentProblem = false;
+
+    problemNumber = 0;
+    currentScore = 0;
+    numCorrect = 0;
+    oldVal = "";
+    problemsOrder = [...Array(problems.length).keys()];
+    shuffleArray(problemsOrder);
+    skippedProblems = [];
+
+    $("#intro-window").hide();
+    $("#ending-window").hide();
+    $("#game-window").show();
+    $("#skipped-problems").html("");
+    $("#skipped-problems").hide();
+
+    displayLaTeXInBody();
+    $("#score").text("0 / " + problems.length);
+    $('#show-solution-button').show();
+    displayInfiniteTime();
+    loadProblem();
+}
+
 function loadProblem() {
+    if (currentMode === 'practice' && problemNumber >= problems.length) {
+        endGame();
+        return;
+    }
+
     // clear current work
     $('#out').empty();
     $('#user-input').val('');
@@ -187,6 +272,11 @@ function loadProblem() {
       target = problems[problemNumber + 179];
     }
     problemNumber += 1;
+    currentProblem = target;
+
+    practiceHelpUsedCurrentProblem = false;
+    $('#show-solution-button').text('Show Solution');
+    $('#solution-display').hide();
 
     // load problem text
     let problemText = "Problem " + problemNumber + ": " + target.title;
@@ -265,10 +355,20 @@ function validateProblem() {
                 currentScore += problemPoints;
                 numCorrect += 1;
 
+                if (currentMode === 'practice') {
+                    if (practiceHelpUsedCurrentProblem) {
+                        practiceHelpUsed++;
+                    } else {
+                        practiceSolvedAlone++;
+                    }
+                    $("#score").text(numCorrect + " / " + problems.length);
+                } else {
+                    $("#score").text(currentScore);
+                }
+
                 // Styling changes
                 $('#out').parent().addClass("correct");
                 $('#user-input').prop("disabled", true);
-                $("#score").text(currentScore);
 
                 // Load new problem
                 setTimeout(loadProblem, 1500);
@@ -287,12 +387,109 @@ function escapeHtml(text) {
         .replace(/'/g, "&#039;");
 }
 
+// Auth functions
+function updateAuthUI() {
+    if (currentUser) {
+        const initial = currentUser.displayName ? currentUser.displayName[0].toUpperCase() : '?';
+        $('#account-button').text(initial).addClass('account-button-signed-in');
+        loadIntroBest();
+    } else {
+        $('#account-button').text('Sign in').removeClass('account-button-signed-in');
+        $('#account-panel').hide();
+        personalBests = {};
+        currentUserPersonalBest = 0;
+        $('#intro-personal-best').html('Want to see your highscores? <button class="link-button" id="intro-signin-link">Sign in &rarr;</button>');
+    }
+}
+
+async function loadIntroBest() {
+    if (!currentUser) {
+        $('#intro-personal-best').text('');
+        personalBests = {};
+        return;
+    }
+    try {
+        const userDoc = await db.collection('users').doc(currentUser.uid).get();
+        personalBests = userDoc.exists ? (userDoc.data().personalBests || {}) : {};
+
+        const parts = [180, 300, 600].map(d => {
+            const b = personalBests[d] || 0;
+            return durationLabel(d) + ': ' + (b > 0 ? b + ' pts' : '—');
+        });
+        $('#intro-personal-best').text('Your bests: ' + parts.join('  ·  '));
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function loadAccountPanel() {
+    $('#panel-name').text(currentUser.displayName);
+    $('#panel-best').text('Loading…');
+    $('#panel-history').html('<p class="panel-empty">Loading…</p>');
+
+    try {
+        const uid = currentUser.uid;
+        const userDoc = await db.collection('users').doc(uid).get();
+        const bests = userDoc.exists ? (userDoc.data().personalBests || {}) : {};
+        const anyBest = Object.values(bests).some(v => v > 0);
+        if (anyBest) {
+            const parts = [180, 300, 600].map(d => {
+                const b = bests[d] || 0;
+                return durationLabel(d) + ': ' + (b > 0 ? b + ' pts' : '—');
+            });
+            $('#panel-best').text(parts.join('  ·  '));
+        } else {
+            $('#panel-best').text('No games yet.');
+        }
+
+        const gamesSnap = await db.collection('users').doc(uid).collection('games')
+            .orderBy('timestamp', 'desc').limit(10).get();
+
+        $('#panel-history').empty();
+        if (gamesSnap.empty) {
+            $('#panel-history').html('<p class="panel-empty">No games yet.</p>');
+        } else {
+            gamesSnap.forEach(doc => {
+                const d = doc.data();
+                const date = d.timestamp ? d.timestamp.toDate().toLocaleDateString('de-DE') : '—';
+                $('#panel-history').append(
+                    `<div class="history-entry">${d.score} pts &nbsp;·&nbsp; ${d.numCorrect} formulas &nbsp;·&nbsp; ${d.duration > 0 ? durationLabel(d.duration) : 'zen'} &nbsp;·&nbsp; ${date}</div>`
+                );
+            });
+        }
+    } catch (e) {
+        console.error(e);
+        $('#panel-best').text('Error loading stats.');
+    }
+}
+
+async function saveGameResult(score, numCorrect, mode, duration) {
+    if (!currentUser) return;
+    try {
+        const uid = currentUser.uid;
+        await db.collection('users').doc(uid).collection('games').add({
+            score, numCorrect, mode, duration,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        if (duration > 0 && score > (personalBests[duration] || 0)) {
+            const userRef = db.collection('users').doc(uid);
+            await userRef.set({
+                displayName: currentUser.displayName,
+                personalBests: { ...personalBests, [duration]: score }
+            }, { merge: true });
+        }
+    } catch (e) {
+        console.error('Error saving game:', e);
+    }
+}
+
 // Leaderboard functions
 async function submitScore(name, score) {
     try {
         await db.collection('leaderboard').add({
             name: name.trim(),
             score: score,
+            duration: currentDuration,
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
         });
         loadLeaderboard('today'); // Refresh leaderboard after submission
@@ -306,9 +503,8 @@ async function loadLeaderboard(timeRange) {
     leaderboardList.empty();
     
     try {
-        let query = db.collection('leaderboard');
-        
-        // Add time constraints based on selected range
+        let query = db.collection('leaderboard').where('duration', '==', currentDuration);
+
         const now = new Date();
         if (timeRange === 'today') {
             const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -317,7 +513,7 @@ async function loadLeaderboard(timeRange) {
             const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
             query = query.where('timestamp', '>=', startOfMonth);
         }
-        
+
         const snapshot = await query.orderBy('score', 'desc').limit(10).get();
         
         if (snapshot.empty) {
@@ -347,21 +543,11 @@ async function loadLeaderboard(timeRange) {
 // Start by showing the intro.
 $(document).ready(function() {
     // Handlers
-    $("#start-button-timed").click(function() {
-        startGame(true);
-    });
-
-    $("#start-button-untimed").click(function() {
-        startGame(false);
-    });
-
-    $("#reset-button-timed").click(function() {
-        startGame(true);
-    });
-
-    $("#reset-button-untimed").click(function() {
-        startGame(false);
-    });
+    $("#start-button-3min").click(function() { startGame(180); });
+    $("#start-button-5min").click(function() { startGame(300); });
+    $("#start-button-10min").click(function() { startGame(600); });
+    $("#start-button-untimed").click(function() { startGame(0); });
+    $("#start-button-practice").click(function() { startPracticeMode(); });
 
     $("#skip-button").click(function() {
         skippedProblems.push(problemNumber - 1);
@@ -378,6 +564,17 @@ $(document).ready(function() {
 
     $("#user-input").on("change keyup paste", function() {
         validateProblem()
+    });
+
+    $("#show-solution-button").click(function() {
+        if ($('#solution-display').is(':hidden')) {
+            $('#solution-display').text(currentProblem.latex).show();
+            $(this).text('Hide Solution');
+            if (currentMode === 'practice') practiceHelpUsedCurrentProblem = true;
+        } else {
+            $('#solution-display').hide();
+            $(this).text('Show Solution');
+        }
     });
 
     $("#shadow-checkbox").change(_ => {
@@ -420,6 +617,43 @@ $(document).ready(function() {
     $("#play-again-button").click(function() {
         showIntro();
     });
-    
+
+    // Auth handlers
+    auth.onAuthStateChanged(user => {
+        currentUser = user;
+        updateAuthUI();
+    });
+
+    $("#account-button").click(function() {
+        if (!currentUser) {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            auth.signInWithPopup(provider).catch(err => console.error(err));
+        } else {
+            const panel = $('#account-panel');
+            if (panel.is(':hidden')) {
+                loadAccountPanel();
+                panel.show();
+            } else {
+                panel.hide();
+            }
+        }
+    });
+
+    $("#panel-signout").click(function() {
+        auth.signOut();
+        $('#account-panel').hide();
+    });
+
+    $(document).click(function(e) {
+        if (!$(e.target).closest('#account-widget').length) {
+            $('#account-panel').hide();
+        }
+    });
+
+    $(document).on('click', '#intro-signin-link', function() {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        auth.signInWithPopup(provider).catch(err => console.error(err));
+    });
+
     showIntro();
 });
