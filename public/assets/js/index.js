@@ -178,6 +178,55 @@ function endGame() {
 }
 
 
+function showAllProblems() {
+    $("#intro-window").hide();
+    $("#ending-window").hide();
+    $("#game-window").hide();
+    $("#browse-window").show();
+
+    $("#browse-count").text(problems.length);
+    const list = $("#browse-list").empty();
+
+    // Build all DOM entries first (no KaTeX yet)
+    problems.forEach((problem, i) => {
+        const targetId = 'browse-target-' + i;
+        const sourceId = 'browse-source-' + i;
+        const entry = document.createElement('div');
+        entry.className = 'browse-entry';
+        entry.innerHTML =
+            '<div class="browse-entry-header">' +
+                '<span class="browse-number">' + (i + 1) + '.</span>' +
+                '<span class="browse-entry-title">' + escapeHtml(problem.title) + '</span>' +
+                '<button class="latex-button browse-toggle" data-source="' + sourceId + '">LaTeX</button>' +
+            '</div>' +
+            '<div class="browse-formula"><div id="' + targetId + '"></div></div>' +
+            '<div id="' + sourceId + '" class="browse-source" style="display:none;">' + escapeHtml(problem.latex) + '</div>';
+        list[0].appendChild(entry);
+    });
+
+    // Render KaTeX in batches so the UI stays responsive
+    const BATCH = 20;
+    let idx = 0;
+    function renderBatch() {
+        const end = Math.min(idx + BATCH, problems.length);
+        for (; idx < end; idx++) {
+            const el = document.getElementById('browse-target-' + idx);
+            if (el) {
+                katex.render(problems[idx].latex, el, { throwOnError: false, displayMode: true });
+            }
+        }
+        if (idx < problems.length) {
+            setTimeout(renderBatch, 0);
+        }
+    }
+    setTimeout(renderBatch, 0);
+
+    list.on('click', '.browse-toggle', function() {
+        const sourceId = $(this).data('source');
+        $('#' + sourceId).toggle();
+    });
+}
+
 function durationLabel(seconds) {
     return (seconds / 60) + ' min';
 }
@@ -451,7 +500,8 @@ async function loadAccountPanel() {
         } else {
             gamesSnap.forEach(doc => {
                 const d = doc.data();
-                const date = d.timestamp ? d.timestamp.toDate().toLocaleDateString('de-DE') : '—';
+                const ts = d.timestamp ? d.timestamp.toDate() : null;
+                const date = ts ? ts.toLocaleDateString('de-DE') + ', ' + ts.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '—';
                 $('#panel-history').append(
                     `<div class="history-entry">${d.score} pts &nbsp;·&nbsp; ${d.numCorrect} formulas &nbsp;·&nbsp; ${d.duration > 0 ? durationLabel(d.duration) : 'zen'} &nbsp;·&nbsp; ${date}</div>`
                 );
@@ -548,6 +598,11 @@ $(document).ready(function() {
     $("#start-button-10min").click(function() { startGame(600); });
     $("#start-button-untimed").click(function() { startGame(0); });
     $("#start-button-practice").click(function() { startPracticeMode(); });
+    $("#start-button-browse").click(function() { showAllProblems(); });
+    $("#browse-back-button").click(function() {
+        $("#browse-window").hide();
+        showIntro();
+    });
 
     $("#skip-button").click(function() {
         skippedProblems.push(problemNumber - 1);
