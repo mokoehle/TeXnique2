@@ -24,6 +24,7 @@ let currentProblem = null;
 let practiceHelpUsedCurrentProblem = false;
 let practiceHelpUsed = 0;
 let practiceSolvedAlone = 0;
+let solvedProblems = [];
 
 function mobileCheck() {
   var check = false;
@@ -80,6 +81,7 @@ function toggleShowSkipped() {
 function showIntro() {
     $("#game-window").hide();
     $("#ending-window").hide();
+    $("#profile-window").hide();
     $("#intro-window").show();
     $("#score-submission").show();
 
@@ -248,6 +250,7 @@ function startGame(durationSeconds) {
     problemsOrder = [...Array(problems.length).keys()];
     shuffleArray(problemsOrder);
     skippedProblems = [];
+    solvedProblems = [];
 
     $("#intro-window").hide();
     $("#ending-window").hide();
@@ -284,6 +287,7 @@ function startPracticeMode() {
     problemsOrder = [...Array(problems.length).keys()];
     shuffleArray(problemsOrder);
     skippedProblems = [];
+    solvedProblems = [];
 
     $("#intro-window").hide();
     $("#ending-window").hide();
@@ -403,6 +407,7 @@ function validateProblem() {
                 lastTarget = curTarget;
                 currentScore += problemPoints;
                 numCorrect += 1;
+                if (currentProblem) solvedProblems.push(currentProblem.id);
 
                 if (currentMode === 'practice') {
                     if (practiceHelpUsedCurrentProblem) {
@@ -471,6 +476,114 @@ async function loadIntroBest() {
     }
 }
 
+async function showProfilePage() {
+    if (!currentUser) return;
+    $('#account-panel').hide();
+    $('#intro-window').hide();
+    $('#ending-window').hide();
+    $('#game-window').hide();
+    $('#profile-window').show();
+
+    const name = currentUser.displayName || currentUser.email || 'Unknown';
+    $('#profile-user-name').text(name);
+    $('#profile-bests').html('<p class="profile-loading">Loading…</p>');
+    $('#profile-history').html('<p class="profile-loading">Loading…</p>');
+
+    try {
+        const uid = currentUser.uid;
+        const userDoc = await db.collection('users').doc(uid).get();
+        const bests = userDoc.exists ? (userDoc.data().personalBests || {}) : {};
+
+        const bestsHtml = [180, 300, 600].map(d => {
+            const b = bests[d] || 0;
+            return '<div class="profile-best-card">' +
+                '<div class="profile-best-duration">' + durationLabel(d) + '</div>' +
+                '<div class="profile-best-score">' + (b > 0 ? b : '—') + '</div>' +
+                (b > 0 ? '<div class="profile-best-unit">pts</div>' : '') +
+            '</div>';
+        }).join('');
+        $('#profile-bests').html('<div class="profile-bests-row">' + bestsHtml + '</div>');
+
+        const gamesSnap = await db.collection('users').doc(uid).collection('games')
+            .orderBy('timestamp', 'desc').limit(50).get();
+
+        if (gamesSnap.empty) {
+            $('#profile-history').html('<p class="profile-empty">No games yet.</p>');
+        } else {
+            const gameDataMap = {};
+            let rows = '';
+            gamesSnap.forEach(doc => {
+                const g = doc.data();
+                gameDataMap[doc.id] = g.solvedProblemIds || [];
+                const ts = g.timestamp ? g.timestamp.toDate() : null;
+                const date = ts ? ts.toLocaleDateString('de-DE') : '—';
+                const time = ts ? ts.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '';
+                const modeLabel = g.mode === 'practice' ? 'Practice' : (g.duration > 0 ? durationLabel(g.duration) : 'Zen');
+                rows +=
+                    '<tr class="profile-game-row" data-docid="' + doc.id + '">' +
+                        '<td>' + date + (time ? '<span class="profile-time"> ' + time + '</span>' : '') + '</td>' +
+                        '<td><span class="profile-mode-tag">' + modeLabel + '</span></td>' +
+                        '<td class="profile-score-cell">' + g.score + '</td>' +
+                        '<td>' + g.numCorrect + ' <span class="profile-expand-icon">▸</span></td>' +
+                    '</tr>' +
+                    '<tr class="profile-detail-row" id="detail-' + doc.id + '" style="display:none;">' +
+                        '<td colspan="4"><div class="profile-detail-content"></div></td>' +
+                    '</tr>';
+            });
+            $('#profile-history').html(
+                '<table class="profile-table">' +
+                '<thead><tr><th>Date</th><th>Mode</th><th>Score</th><th>Formulas</th></tr></thead>' +
+                '<tbody>' + rows + '</tbody></table>'
+            );
+
+            $('#profile-history').off('click', '.profile-game-row').on('click', '.profile-game-row', function() {
+                const docId = $(this).data('docid');
+                const detailRow = $('#detail-' + docId);
+                const content = detailRow.find('.profile-detail-content');
+                const icon = $(this).find('.profile-expand-icon');
+                const isOpen = $(this).hasClass('profile-row-open');
+
+                if (isOpen) {
+                    $(this).removeClass('profile-row-open');
+                    icon.text('▸');
+                    detailRow.hide();
+                } else {
+                    $(this).addClass('profile-row-open');
+                    icon.text('▾');
+                    detailRow.show();
+
+                    if (content.is(':empty')) {
+                        const ids = gameDataMap[docId];
+                        if (!ids || ids.length === 0) {
+                            content.html('<p class="profile-empty">No problem data for this game.</p>');
+                        } else {
+                            ids.forEach((id, i) => {
+                                const problem = problems.find(p => p.id === id);
+                                if (!problem) return;
+                                const formulaId = 'pf-' + docId + '-' + i;
+                                const div = document.createElement('div');
+                                div.className = 'profile-detail-problem';
+                                div.innerHTML =
+                                    '<span class="profile-detail-num">' + (i + 1) + '.</span> ' +
+                                    '<span class="profile-detail-title">' + escapeHtml(problem.title) + '</span>' +
+                                    '<div class="profile-detail-formula" id="' + formulaId + '"></div>';
+                                content[0].appendChild(div);
+                                katex.render(problem.latex, document.getElementById(formulaId), {
+                                    throwOnError: false, displayMode: true
+                                });
+                            });
+                        }
+                    }
+                }
+            });
+        }
+    } catch (e) {
+        console.error(e);
+        $('#profile-bests').html('<p class="profile-empty">Error loading data.</p>');
+        $('#profile-history').html('');
+    }
+}
+
 async function loadAccountPanel() {
     $('#panel-name').text(currentUser.displayName);
     $('#panel-best').text('Loading…');
@@ -519,6 +632,7 @@ async function saveGameResult(score, numCorrect, mode, duration) {
         const uid = currentUser.uid;
         await db.collection('users').doc(uid).collection('games').add({
             score, numCorrect, mode, duration,
+            solvedProblemIds: [...solvedProblems],
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
         });
         if (duration > 0 && score > (personalBests[duration] || 0)) {
@@ -697,6 +811,14 @@ $(document).ready(function() {
     $("#panel-signout").click(function() {
         auth.signOut();
         $('#account-panel').hide();
+    });
+
+    $("#panel-profile-button").click(function() {
+        showProfilePage();
+    });
+
+    $("#profile-back-button").click(function() {
+        showIntro();
     });
 
     $(document).click(function(e) {
